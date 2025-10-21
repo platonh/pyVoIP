@@ -109,7 +109,7 @@ class VoIPCall:
                     ]:
                         self.answered(message)
                 elif message.status == ResponseCode.NOT_FOUND:
-                    pass
+                    self.not_found(message)
                 elif message.status == ResponseCode.INTERNAL_SERVER_ERROR:
                     debug(f"Received Internal-Server-Error Message: {message}")
                     pass
@@ -117,6 +117,10 @@ class VoIPCall:
                     self.denied(message)
                     debug(f"Received Forbidden Message: {message}")
                     pass
+                elif message.status == ResponseCode.BUSY_HERE:
+                    self.busy(message)
+                elif message.status == ResponseCode.SERVICE_UNAVAILABLE:
+                    self.unavailable(message)
             else:
                 if message.method == SIPMethod.BYE:
                     self.bye(message)
@@ -476,7 +480,7 @@ class VoIPCall:
         del self.phone.calls[self.request.headers["Call-ID"]]
         debug("Call not found and terminated")
         warnings.warn(
-            f"The number '{request.headers['To']['number']}' "
+            f"The number '{request.headers.get('To', {}).get('number', 'Unknown')}' "
             + "was not found.  Did you call the wrong number?  "
             + "CallState set to CallState.ENDED.",
             stacklevel=20,
@@ -485,6 +489,9 @@ class VoIPCall:
         # come up again if it happens.  However, this
         # also resets all other warnings.
         warnings.simplefilter("default")
+
+        ack = self.phone.sip.gen_ack(request)
+        self.conn.send(ack)
 
     def unavailable(self, request: SIPMessage) -> None:
         if self.state != CallState.DIALING:
@@ -501,7 +508,7 @@ class VoIPCall:
         del self.phone.calls[self.request.headers["Call-ID"]]
         debug("Call unavailable and terminated")
         warnings.warn(
-            f"The number '{request.headers['To']['number']}' "
+            f"The number '{request.headers.get('To', {}).get('number', 'Unknown')}' "
             + "was unavailable.  CallState set to CallState.ENDED.",
             stacklevel=20,
         )
@@ -510,6 +517,9 @@ class VoIPCall:
         # also resets all other warnings.
         warnings.simplefilter("default")
 
+        ack = self.phone.sip.gen_ack(request)
+        self.conn.send(ack)
+
     def ringing(self, request: SIPMessage) -> None:
         if self.state == CallState.RINGING:
             self.deny()
@@ -517,7 +527,16 @@ class VoIPCall:
             self.request = request
 
     def busy(self, request: SIPMessage) -> None:
-        self.bye(request)
+        for x in self.RTPClients:
+            x.stop()
+
+        self.state = CallState.ENDED
+
+        if self.request.headers["Call-ID"] in self.phone.calls:
+            del self.phone.calls[self.request.headers["Call-ID"]]
+
+        ack = self.phone.sip.gen_ack(request)
+        self.conn.send(ack)
 
     def deny(self) -> None:
         if self.state != CallState.RINGING:
