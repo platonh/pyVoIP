@@ -10,7 +10,6 @@ import threading
 import time
 import warnings
 
-
 __all__ = [
     "add_bytes",
     "byte_to_bits",
@@ -22,7 +21,6 @@ __all__ = [
     "RTPClient",
     "TransmitType",
 ]
-
 
 debug = pyVoIP.debug
 
@@ -335,12 +333,13 @@ class RTPClient:
         self.outSSRC = random.randint(1000, 65530)
 
     def start(self) -> None:
-        self.sin = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # Some systems just reply to the port they receive from instead of
-        # listening to the SDP.
-        self.sout = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sin.bind((self.in_ip, self.in_port))
-        self.sin.setblocking(False)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind((self.in_ip, self.in_port))
+        self.sock.setblocking(False)
+
+        # Keep references for backward compatibility
+        self.sin = self.sock
+        self.sout = self.sock
 
         r = Timer(0, self.recv)
         r.name = "RTP Receiver"
@@ -351,12 +350,14 @@ class RTPClient:
 
     def stop(self) -> None:
         self.NSD = False
+        if hasattr(self, "sock"):
+            if self.sock:
+                self.sock.close()
+        # Clear the old references
         if hasattr(self, "sin"):
-            if self.sin:
-                self.sin.close()
+            self.sin = None
         if hasattr(self, "sout"):
-            if self.sout:
-                self.sout.close()
+            self.sout = None
 
     def read(self, length: int = 160, blocking: bool = True) -> bytes:
         if not blocking:
@@ -374,7 +375,7 @@ class RTPClient:
     def recv(self) -> None:
         while self.NSD:
             try:
-                packet = self.sin.recv(8192)
+                packet = self.sock.recv(8192)
                 self.parse_packet(packet)
             except BlockingIOError:
                 time.sleep(0.01)
@@ -404,7 +405,7 @@ class RTPClient:
             # debug(payload)
 
             try:
-                self.sout.sendto(packet, (self.out_ip, self.out_port))
+                self.sock.sendto(packet, (self.out_ip, self.out_port))
             except OSError:
                 warnings.warn(
                     "RTP Packet failed to send!",
