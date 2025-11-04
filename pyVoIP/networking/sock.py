@@ -139,15 +139,20 @@ class VoIPConnection:
             conn.row_factory = sqlite3.Row
 
             with self.recv_lock:
-                sql = (
-                    'SELECT * FROM "msgs" WHERE "call_id"=? AND '
-                    + '"local_tag" IS ? AND "remote_tag" IS ?'
-                )
-                bindings = [
-                    self.call_id,
-                    self.local_tag,
-                    self.remote_tag,
-                ]
+                sql = 'SELECT * FROM "msgs" WHERE "call_id"=?'
+                bindings = [self.call_id]
+
+                if self.local_tag is None:
+                    sql += ' AND "local_tag" IS NULL'
+                else:
+                    sql += ' AND "local_tag"=?'
+                    bindings.append(self.local_tag)
+
+                if self.remote_tag is None:
+                    sql += ' AND "remote_tag" IS NULL'
+                else:
+                    sql += ' AND "remote_tag"=?'
+                    bindings.append(self.remote_tag)
 
                 #TODO: TRY
                 #https://github.com/BRIDGE-AI/bridge/issues/199#issuecomment-2646368741
