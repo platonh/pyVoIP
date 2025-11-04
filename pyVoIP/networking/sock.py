@@ -115,15 +115,22 @@ class VoIPConnection:
             # print(self.sock.get_database_dump())
             conn = self.sock.buffer.cursor()
             conn.row_factory = sqlite3.Row
-            sql = (
-                'SELECT * FROM "msgs" WHERE "call_id"=? AND '
-                + '"local_tag" IS ? AND "remote_tag" IS ?'
-            )
-            bindings = (
-                self.call_id,
-                self.local_tag,
-                self.remote_tag,
-            )
+            sql = 'SELECT * FROM "msgs" WHERE "call_id"=?'
+            bindings = [self.call_id]
+
+            if self.local_tag is None:
+                sql += ' AND "local_tag" IS NULL'
+            else:
+                sql += ' AND "local_tag"=?'
+                bindings.append(self.local_tag)
+
+            if self.remote_tag is None:
+                sql += ' AND "remote_tag" IS NULL'
+            else:
+                sql += ' AND "remote_tag"=?'
+                bindings.append(self.remote_tag)
+
+            bindings = tuple(bindings)
             result = conn.execute(sql, bindings)
             row = result.fetchone()
             if not row:
