@@ -1243,7 +1243,17 @@ class SIPClient:
                 request.headers["Contact"]["port"],
             ),
         )
-        response = SIPMessage.from_bytes(conn.recv(8192))
+        try:
+            response = SIPMessage.from_bytes(conn.recv(8192, timeout=5))
+        except TimeoutError as e:
+            debug(f"conn.recv has timed out while hangup: {e}")
+            return
+        
+        if isinstance(response, SIPRequest):
+            debug("Received a request on bye:")
+            debug(response.summary())
+            return
+
         if response.status == ResponseCode(
             401
         ) or response.status == ResponseCode(407):
