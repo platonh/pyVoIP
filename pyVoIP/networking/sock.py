@@ -111,40 +111,41 @@ class VoIPConnection:
     def _udp_recv(self, nbytes: int, timeout=0, peak=False) -> bytes:
         timeout = time.monotonic() + timeout if timeout else math.inf
         while time.monotonic() <= timeout and not self.sock.SD:
-            with self.sock.conns_lock:
-                conn = self.sock.buffer.cursor()
-                conn.row_factory = sqlite3.Row
-                sql = 'SELECT * FROM "msgs" WHERE "call_id"=?'
-                bindings = [self.call_id]
+            # print("Trying to receive")
+            # print(self.sock.get_database_dump())
+            conn = self.sock.buffer.cursor()
+            conn.row_factory = sqlite3.Row
+            sql = 'SELECT * FROM "msgs" WHERE "call_id"=?'
+            bindings = [self.call_id]
 
-                if self.local_tag is None:
-                    sql += ' AND "local_tag" IS NULL'
-                else:
-                    sql += ' AND "local_tag"=?'
-                    bindings.append(self.local_tag)
+            if self.local_tag is None:
+                sql += ' AND "local_tag" IS NULL'
+            else:
+                sql += ' AND "local_tag"=?'
+                bindings.append(self.local_tag)
 
-                if self.remote_tag is None:
-                    sql += ' AND "remote_tag" IS NULL'
-                else:
-                    sql += ' AND "remote_tag"=?'
-                    bindings.append(self.remote_tag)
+            if self.remote_tag is None:
+                sql += ' AND "remote_tag" IS NULL'
+            else:
+                sql += ' AND "remote_tag"=?'
+                bindings.append(self.remote_tag)
 
-                bindings = tuple(bindings)
-                result = conn.execute(sql, bindings)
-                row = result.fetchone()
-                if not row:
-                    conn.close()
-                    continue
-                if peak:
-                    # If peaking, return before deleting from the database
-                    conn.close()
-                    return row["msg"].encode("utf8")
-                try:
-                    conn.execute('DELETE FROM "msgs" WHERE "id" = ?', (row["id"],))
-                except sqlite3.OperationalError:
-                    pass
+            bindings = tuple(bindings)
+            result = conn.execute(sql, bindings)
+            row = result.fetchone()
+            if not row:
+                conn.close()
+                continue
+            if peak:
+                # If peaking, return before deleting from the database
                 conn.close()
                 return row["msg"].encode("utf8")
+            try:
+                conn.execute('DELETE FROM "msgs" WHERE "id" = ?', (row["id"],))
+            except sqlite3.OperationalError:
+                pass
+            conn.close()
+            return row["msg"].encode("utf8")
         if time.monotonic() >= timeout:
             raise TimeoutError()
 
@@ -258,34 +259,31 @@ class VoIPSocket(threading.Thread):
     ) -> Optional[VoIPConnection]:
         local_tag, remote_tag = self.determine_tags(message)
         call_id = message.headers["Call-ID"]
-
-        with self.conns_lock:
-            conn = self.buffer.cursor()
-            sql = 'SELECT "connection" FROM "listening" WHERE "call_id" IS ?'
-            sql += ' AND "local_tag" IS ? AND "remote_tag" IS ?'
-            result = conn.execute(sql, (call_id, local_tag, remote_tag))
-            rows = result.fetchall()
-            if rows:
-                conn.close()
-                return self.conns[rows[0][0]]
-            debug("New Connection Started")
-            # If we didn't find one lets look for something that doesn't have
-            # one of the tags
-            sql = 'SELECT "connection" FROM "listening" WHERE "call_id" = ?'
-            sql += ' AND ("local_tag" IS NULL OR "local_tag" = ?)'
-            sql += ' AND ("remote_tag" IS NULL OR "remote_tag" = ?)'
-            result = conn.execute(sql, (call_id, local_tag, remote_tag))
-            rows = result.fetchall()
-            if rows:
-                if local_tag and remote_tag:
-                    sql = 'UPDATE "listening" SET "remote_tag" = ?, '
-                    sql += '"local_tag" = ? WHERE "connection" = ?'
-                    conn.execute(sql, (remote_tag, local_tag, rows[0][0]))
-                    self.conns[rows[0][0]].update_tags(local_tag, remote_tag)
-                conn.close()
-                return self.conns[rows[0][0]]
+        conn = self.buffer.cursor()
+        sql = 'SELECT "connection" FROM "listening" WHERE "call_id" IS ?'
+        sql += ' AND "local_tag" IS ? AND "remote_tag" IS ?'
+        result = conn.execute(sql, (call_id, local_tag, remote_tag))
+        rows = result.fetchall()
+        if rows:
             conn.close()
-
+            return self.conns[rows[0][0]]
+        debug("New Connection Started")
+        # If we didn't find one lets look for something that doesn't have
+        # one of the tags
+        sql = 'SELECT "connection" FROM "listening" WHERE "call_id" = ?'
+        sql += ' AND ("local_tag" IS NULL OR "local_tag" = ?)'
+        sql += ' AND ("remote_tag" IS NULL OR "remote_tag" = ?)'
+        result = conn.execute(sql, (call_id, local_tag, remote_tag))
+        rows = result.fetchall()
+        if rows:
+            if local_tag and remote_tag:
+                sql = 'UPDATE "listening" SET "remote_tag" = ?, '
+                sql += '"local_tag" = ? WHERE "connection" = ?'
+                conn.execute(sql, (remote_tag, local_tag, rows[0][0]))
+                self.conns[rows[0][0]].update_tags(local_tag, remote_tag)
+            conn.close()
+            return self.conns[rows[0][0]]
+        conn.close()
         return None
 
     def __register_connection(self, connection: VoIPConnection) -> int:
@@ -441,18 +439,16 @@ class VoIPSocket(threading.Thread):
                 VoIPConnection(self, conn, message)
             )
 
-        with self.conns_lock:
-            call_id = message.headers["Call-ID"]
-            local_tag, remote_tag = self.determine_tags(message)
-            raw_message = message.raw.decode("utf8")
-            conn = self.buffer.cursor()
-            conn.execute(
-                "INSERT INTO msgs (call_id, local_tag, remote_tag, msg) "
-                + "VALUES (?, ?, ?, ?)",
-                (call_id, local_tag, remote_tag, raw_message),
-            )
-            conn.close()
-
+        call_id = message.headers["Call-ID"]
+        local_tag, remote_tag = self.determine_tags(message)
+        raw_message = message.raw.decode("utf8")
+        conn = self.buffer.cursor()
+        conn.execute(
+            "INSERT INTO msgs (call_id, local_tag, remote_tag, msg) "
+            + "VALUES (?, ?, ?, ?)",
+            (call_id, local_tag, remote_tag, raw_message),
+        )
+        conn.close()
         if conn_id:
             self.sip.handle_new_connection(self.conns[conn_id])
 
