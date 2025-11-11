@@ -1235,29 +1235,15 @@ class SIPClient:
 
     def bye(self, request: SIPMessage) -> None:
         message = self.gen_bye(request)
-
-        attempts = 5
-
-        for i in range(attempts):
-            try:
-                conn = self.sendto(
-                    message,
-                    (
-                        request.headers["Contact"]["host"],
-                        request.headers["Contact"]["port"],
-                    ),
-                )
-                response = SIPMessage.from_bytes(conn.recv(8192))
-                break
-
-            except Exception as e:
-                debug(f"BYE ERROR (attempt {i+1}/{attempts}): {e}")
-                if i == attempts - 1:
-                    raise
-                
-                time.sleep(1)
-                continue
-
+        # TODO: Handle bye to server vs. bye to connected client
+        conn = self.sendto(
+            message,
+            (
+                request.headers["Contact"]["host"],
+                request.headers["Contact"]["port"],
+            ),
+        )
+        response = SIPMessage.from_bytes(conn.recv(8192))
         if response.status == ResponseCode(
             401
         ) or response.status == ResponseCode(407):
