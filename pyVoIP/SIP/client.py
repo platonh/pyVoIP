@@ -1030,7 +1030,7 @@ class SIPClient:
         tag = self.tagLibrary[request.headers["Call-ID"]]
         c = request.headers["Contact"]["uri"]
         byeRequest = f"{cmd} {c} SIP/2.0\r\n"
-        byeRequest += self._gen_response_via_header(request)
+        byeRequest += self.__gen_via(self.server, self.gen_branch())
         _from = request.headers["From"]
         to = request.headers["To"]
 
