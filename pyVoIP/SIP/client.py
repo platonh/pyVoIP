@@ -98,8 +98,6 @@ class SIPClient:
         self.byeCounter = Counter()
         self.messageCounter = Counter()
         self.referCounter = Counter()
-        self.callID = Counter()
-        self.sessID = Counter()
 
         self.urnUUID = self.gen_urn_uuid()
         self.nc: Dict[str, Counter] = {}
@@ -355,14 +353,7 @@ class SIPClient:
         return f"User-Agent: pyVoIP {pyVoIP.__version__}\r\n"
 
     def gen_call_id(self) -> str:
-        hash = hashlib.sha256(str(self.callID.next()).encode("utf8"))
-        hhash = hash.hexdigest()
-        return f"{hhash[0:32]}@{self.bind_ip}:{self.bind_port}"
-
-    def gen_last_call_id(self) -> str:
-        hash = hashlib.sha256(str(self.callID.current() - 1).encode("utf8"))
-        hhash = hash.hexdigest()
-        return f"{hhash[0:32]}@{self.bind_ip}:{self.bind_port}"
+        return f"{uuid.uuid4()}@{self.bind_ip}:{self.bind_port}"
 
     def gen_tag(self) -> str:
         # Keep as True instead of NSD so it can generate a tag on deregister.
@@ -542,6 +533,9 @@ class SIPClient:
         """
         branchid = uuid.uuid4().hex[: length - 7]
         return f"z9hG4bK{branchid}"
+
+    def gen_sess_id(self) -> int:
+        return int(time.time())
 
     def gen_urn_uuid(self) -> str:
         """
@@ -1122,9 +1116,9 @@ class SIPClient:
         sendtype: "RTP.TransmitType",
         callback_ip: Optional[str] = "0.0.0.0",
     ) -> Tuple[SIPMessage, str, int, "VoIPConnection"]:
-        branch = "z9hG4bK" + self.gen_call_id()[0:25]
+        branch = self.gen_branch()
         call_id = self.gen_call_id()
-        sess_id = self.sessID.next()
+        sess_id = self.gen_sess_id()
         invite = self.gen_invite(
             number, str(sess_id), ms, sendtype, branch, call_id, callback_ip
         )
@@ -1207,7 +1201,7 @@ class SIPClient:
     def message(
         self, number: str, body: str, ctype: str = "text/plain"
     ) -> SIPMessage:
-        branch = "z0hG4bK" + self.gen_call_id()[0:25]
+        branch = self.gen_branch()
         call_id = self.gen_call_id()
         msg = self.gen_message(number, body, ctype, branch, call_id)
         conn = self.sendto(msg)
