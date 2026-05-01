@@ -1248,9 +1248,8 @@ class SIPClient:
         if data is None:
             return
         response = SIPMessage.from_bytes(data)
-        if response.status == ResponseCode(
-            401
-        ) or response.status == ResponseCode(407):
+        status = response.status if type(response) is SIPResponse else None
+        if status == ResponseCode(401) or status == ResponseCode(407):
             #  Requires password
             auth = self.gen_authorization(response)
             message = message.replace(
