@@ -230,7 +230,7 @@ class SIPClient:
 
         self.s.start()
         # TODO: Check if we need to register with a server or proxy.
-        self.register()
+        # self.register()
         """
         t = Timer(1, self.recv)
         t.name = "SIP Receive"
