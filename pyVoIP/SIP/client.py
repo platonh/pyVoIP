@@ -91,6 +91,9 @@ class SIPClient:
 
         self.default_expires = 120
         self.register_timeout = 30
+        # Seconds to wait for a response to our BYE. Without a bound the
+        # caller blocks forever if the response never arrives.
+        self.bye_timeout = 5
 
         self.inviteCounter = Counter()
         self.registerCounter = Counter()
@@ -1244,7 +1247,11 @@ class SIPClient:
                 request.headers["Contact"]["port"],
             ),
         )
-        data = conn.recv(8192)
+        try:
+            data = conn.recv(8192, self.bye_timeout)
+        except TimeoutError:
+            debug(f"No response to BYE within {self.bye_timeout}s, giving up")
+            return
         if data is None:
             return
         response = SIPMessage.from_bytes(data)
